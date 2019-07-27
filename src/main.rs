@@ -57,10 +57,10 @@ fn _find_sdl_gl_driver() -> Option<u32> {
 const VERTEX_SHADER_SOURCE: &str = r#"
   #version 100
 
-  attribute vec3 pos;
+  attribute vec2 pos;
 
   void main() {
-     gl_Position = vec4(pos.x, pos.y, pos.z, 1.0);
+     gl_Position = vec4(pos.x, pos.y, 0.0, 1.0);
   }
 "#;
 
@@ -82,7 +82,7 @@ impl GlRenderer {
         let (shader_program, vao) = unsafe {
             let shader_program = shader_program(VERTEX_SHADER_SOURCE, FRAGMENT_SHADER_SOURCE);
 
-            let vertices: [f32; 9] = [-0.5, -0.5, 0.0, 0.5, -0.5, 0.0, 0.0, 0.5, 0.0];
+            let vertices: [f32; 6] = [-0.5, -0.5, 0.5, -0.5, 0.0, 0.5];
 
             // gen array & buffer
             let (mut vbo, mut vao) = (0, 0);
@@ -105,10 +105,10 @@ impl GlRenderer {
             gl::EnableVertexAttribArray(0);
             gl::VertexAttribPointer(
                 0,
-                3,
+                2,
                 gl::FLOAT,
                 gl::FALSE,
-                (mem::size_of::<f32>() * 3) as GLint,
+                (mem::size_of::<f32>() * 2) as GLint,
                 ptr::null(),
             );
 
