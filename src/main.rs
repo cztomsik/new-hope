@@ -82,7 +82,7 @@ impl GlRenderer {
         let (shader_program, vao) = unsafe {
             let shader_program = shader_program(VERTEX_SHADER_SOURCE, FRAGMENT_SHADER_SOURCE);
 
-            let vertices: [f32; 6] = [-0.5, -0.5, 0.5, -0.5, 0.0, 0.5];
+            let vertices: [f32; 8] = [-0.5, -0.5, 0.5, -0.5, 0.0, 0.5, 1.0, 1.0];
 
             // gen array & buffer
             let (mut vbo, mut vao) = (0, 0);
@@ -127,8 +127,20 @@ impl GlRenderer {
             gl::Clear(gl::COLOR_BUFFER_BIT);
 
             gl::UseProgram(self.shader_program);
-            gl::BindVertexArray(self.vao);
-            gl::DrawArrays(gl::TRIANGLES, 0, 3);
+            //gl::DrawArrays(gl::TRIANGLES, 0, 3);
+
+            let indices: [u8; 6] = [0, 1, 5, 2, 3, 5];
+            let mut ibo = 0;
+            gl::GenBuffers(1, &mut ibo);
+            gl::BindBuffer(gl::ELEMENT_ARRAY_BUFFER, ibo);
+            gl::BufferData(
+                gl::ELEMENT_ARRAY_BUFFER,
+                (indices.len() * mem::size_of::<u8>()) as GLsizeiptr,
+                mem::transmute(&indices[0]),
+                gl::STATIC_DRAW,
+            );
+
+            gl::DrawElements(gl::TRIANGLES, 6, gl::UNSIGNED_BYTE, ptr::null());
         }
     }
 }
