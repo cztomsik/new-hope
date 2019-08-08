@@ -1,3 +1,25 @@
+// basic PoC just to get some idea about perf of my iGPU & Raspis
+// it is intentionally dumb & many things are missing:
+// - separate opaque & alpha passes
+// - Z-sorting
+// - culling
+// - clipping
+// - basically it's just a classic painter algo for now
+//
+// there's also no scene, it's a kind of imgui but even without any
+// event handling (nor hit-testing), no layout, no anything
+//
+// things missing but in a scope of this PoC:
+// - text rendering & caching (now it's just a line)
+// - images (no loading/decoding, just generate some checkboard)
+// - round border
+// - blur shadow (now it's just an outline)
+// - fill round rect (with different corner radiis)
+//
+// the idea is to get something working on osx, raspi & in a browser
+// improve it a bit and then port it back to the original project
+// as a replacement for webrender
+
 use std::ffi::CString;
 
 use std::mem;
@@ -14,14 +36,14 @@ fn main() {
     let mut event_pump = sdl.event_pump().expect("init event pump");
 
     let window = video
-        .window("Test", 800, 600)
+        .window("Test", WIDTH, 600)
+        .opengl()
         .resizable()
         .build()
         .expect("init window");
 
     let gl_attr = video.gl_attr();
     gl_attr.set_context_profile(GLProfile::Core);
-    gl_attr.set_context_version(3, 2);
 
     let gl_context = window.gl_create_context().expect("create context");
     gl::load_with(|name| video.gl_get_proc_address(name) as *const _);
@@ -45,13 +67,165 @@ fn main() {
     }
 }
 
-fn _find_sdl_gl_driver() -> Option<u32> {
-    for (index, item) in sdl2::render::drivers().enumerate() {
-        if item.name == "opengl" {
-            return Some(index as u32);
+const WIDTH: u32 = 800;
+
+struct GlRenderer {
+    // simple pen to make it a bit more readable
+    x: f32, y: f32,
+
+    data: Vec<f32>
+}
+
+impl GlRenderer {
+    fn new() -> Self {
+        init();
+
+        Self { x: 0., y: 0., data: Vec::new() }
+    }
+
+    fn render(&mut self) {
+        unsafe {
+            gl::ClearColor(1.0, 1.0, 1.0, 1.0);
+            gl::Clear(gl::COLOR_BUFFER_BIT);
+
+            self.x = 0.;
+            self.y = 0.;
+
+            self.demo();
+
+            gl::BufferData(
+                gl::ARRAY_BUFFER,
+                (self.data.len() * mem::size_of::<GLfloat>()) as GLsizeiptr,
+                mem::transmute(&self.data[0]),
+                gl::STATIC_DRAW,
+            );
+
+            gl::EnableVertexAttribArray(0);
+            gl::VertexAttribPointer(
+                0,
+                2,
+                gl::FLOAT,
+                gl::FALSE,
+                0 as GLint,//(mem::size_of::<f32>() * 3) as GLint,
+                ptr::null(),
+            );
+            gl::DrawArrays(gl::TRIANGLES, 0, self.data.len() as i32);
         }
     }
-    None
+
+    fn demo(&mut self) {
+        self.navbar("Demo");
+        self.h1("Create contact");
+
+        self.focus();
+        self.field("Name");
+        self.field("E-mail");
+        self.field("Phone");
+
+        self.button("Create");
+        self.link("Cancel");
+    }
+
+    fn navbar(&mut self, brand_text: &str) {
+        self.fill_rect(0.0, 0.0, WIDTH as f32, 48.0, NAVBAR_COLOR);
+        self.br();
+        self.text(brand_text, NAVBAR_TEXT_COLOR);
+        self.br();
+        self.br();
+    }
+
+    fn h1(&mut self, text: &str) {
+        self.br();
+        self.text(text, TEXT_COLOR);
+        self.br();
+    }
+
+    // where it is just do a round rect and don't change x/y (expects field)
+    fn focus(&mut self) {
+        self.shadow(self.x, self.y, INPUT_WIDTH, INPUT_HEIGHT, 0.0, 1.0, FOCUS_COLOR);
+    }
+
+    fn field(&mut self, label: &str) {
+        self.br();
+        self.text(label, TEXT_COLOR);
+        self.br();
+        self.fill_rect(self.x, self.y, INPUT_WIDTH, INPUT_HEIGHT, INPUT_COLOR);
+        self.border(self.x, self.y, INPUT_WIDTH, INPUT_HEIGHT, INPUT_BORDER_COLOR);
+    }
+
+    fn button(&mut self, text: &str) {
+        let w = text.len() as f32 * 10.;
+        let h = 32.;
+
+        self.fill_round(0.0, 0.0, w, h, 4., BUTTON_COLOR);
+        self.x += BUTTON_PADDING;
+        self.y += BUTTON_PADDING;
+        self.text(text, BUTTON_TEXT_COLOR);
+        self.y -= BUTTON_PADDING;
+    }
+
+    fn link(&mut self, text: &str) {
+        self.text(text, LINK_COLOR);
+    }
+
+    fn br(&mut self) {
+        self.x = 20.;
+        self.y += 16.;
+    }
+
+    fn text(&mut self, text: &str, color: Color) {
+        let w = text.len() as f32 * 10.;
+
+        self.x += w;
+
+        // line for now
+        self.fill_rect(self.x, self.y, w, 1., color);
+    }
+
+    fn shadow(&mut self, x: f32, y: f32, w: f32, h: f32, _blur: f32, spread: f32, color: Color) {
+        // solid for now
+        self.fill_rect(x - spread, y - spread, w + 2. * spread, h + 2. * spread, color);
+    }
+
+    fn border(&mut self, x: f32, y: f32, w: f32, h: f32, color: Color) {
+        self.fill_rect(x, y, w, 1., color);
+        self.fill_rect(x, y, 1., h, color);
+        self.fill_rect(x, y + h - 1., w, 1., color);
+        self.fill_rect(x, y + w - 1., 1., h, color);
+    }
+
+    fn fill_round(&mut self, x: f32, y: f32, w: f32, h: f32, _radius: f32, color: Color) {
+        //println!("fill round {:?}", (x, y, w, h, radius, color));
+        self.fill_rect(x, y, w, h, color);
+    }
+
+    fn fill_rect(&mut self, x: f32, y: f32, w: f32, h: f32, (r, g, b): Color) {
+        //println!("fill rect {:?}", (x, y, w, h, color));
+
+        self.fill_triangle([
+            (x, y, r, g, b),
+            (x + w, y, r, g, b),
+            (x + w, y + h, r, g, b)
+        ]);
+
+        self.fill_triangle([
+            (x, y, r, g, b),
+            (x + w, y + h, r, g, b),
+            (x, y + h, r, g, b)
+        ]);
+    }
+
+    fn fill_triangle(&mut self, data: [(f32, f32, f32, f32, f32); 3]) {
+        println!("fill triangle {:?}", &data);
+
+        for (x, y, r, g, b) in data.iter() {
+            self.data.push(*x);
+            self.data.push(*y);
+            //self.data.push(*r);
+            //self.data.push(*g);
+            //self.data.push(*b);
+        }
+    }
 }
 
 const VERTEX_SHADER_SOURCE: &str = r#"
@@ -60,7 +234,12 @@ const VERTEX_SHADER_SOURCE: &str = r#"
   attribute vec2 pos;
 
   void main() {
-     gl_Position = vec4(pos.x, pos.y, 0.0, 1.0);
+    // TODO: uniforms
+    vec2 size = vec2(800., 600.);
+    vec2 xy = (pos - (size / 2.)) / size;
+    xy.y *= -1.;
+
+    gl_Position = vec4(xy, 0.0, 1.0);
   }
 "#;
 
@@ -72,76 +251,38 @@ const FRAGMENT_SHADER_SOURCE: &str = r#"
   }
 "#;
 
-struct GlRenderer {
-    shader_program: u32,
-    vao: u32,
-}
+const INPUT_WIDTH: f32 = 100.;
+const INPUT_HEIGHT: f32 = 28.;
+const INPUT_COLOR: Color = (1., 1., 1.);
+const _INPUT_TEXT_COLOR: Color = (0.3, 0.3, 0.3);
+const INPUT_BORDER_COLOR: Color = (0.7, 0.7, 0.7);
+const FOCUS_COLOR: Color = (0.7, 0.7, 1.0);
 
-impl GlRenderer {
-    fn new() -> Self {
-        let (shader_program, vao) = unsafe {
-            let shader_program = shader_program(VERTEX_SHADER_SOURCE, FRAGMENT_SHADER_SOURCE);
+const TEXT_COLOR: Color = (0., 0., 0.);
+const NAVBAR_COLOR: Color = (0.3, 0.3, 1.);
+const NAVBAR_TEXT_COLOR: Color = (1., 1., 1.);
+const LINK_COLOR: Color = (0., 0., 1.);
 
-            let vertices: [f32; 8] = [-0.5, -0.5, 0.5, -0.5, 0.0, 0.5, 1.0, 1.0];
+const BUTTON_COLOR: Color = (0.3, 0.3, 1.);
+const BUTTON_TEXT_COLOR: Color = (1., 1., 1.);
+const BUTTON_PADDING: f32 = 5.;
 
-            // gen array & buffer
-            let (mut vbo, mut vao) = (0, 0);
-            gl::GenVertexArrays(1, &mut vao);
-            gl::GenBuffers(1, &mut vbo);
+type Color = (f32, f32, f32);
 
-            // link them together
-            gl::BindVertexArray(vao);
-            gl::BindBuffer(gl::ARRAY_BUFFER, vbo);
+fn init() {
+    unsafe {
+        // not used but webgl & opengl core profile requires it
+        let mut vao = 0;
+        gl::GenVertexArrays(1, &mut vao);
+        gl::BindVertexArray(vao);
 
-            // & load data
-            gl::BufferData(
-                gl::ARRAY_BUFFER,
-                (vertices.len() * mem::size_of::<GLfloat>()) as GLsizeiptr,
-                mem::transmute(&vertices[0]),
-                gl::STATIC_DRAW,
-            );
+        let shader_program = shader_program(VERTEX_SHADER_SOURCE, FRAGMENT_SHADER_SOURCE);
+        gl::UseProgram(shader_program);
 
-            // for the first attribute
-            gl::EnableVertexAttribArray(0);
-            gl::VertexAttribPointer(
-                0,
-                2,
-                gl::FLOAT,
-                gl::FALSE,
-                (mem::size_of::<f32>() * 2) as GLint,
-                ptr::null(),
-            );
-
-            (shader_program, vao)
-        };
-
-        GlRenderer {
-            shader_program,
-            vao,
-        }
-    }
-
-    fn render(&mut self) {
-        unsafe {
-            gl::ClearColor(0.6, 0.0, 0.8, 1.0);
-            gl::Clear(gl::COLOR_BUFFER_BIT);
-
-            gl::UseProgram(self.shader_program);
-            //gl::DrawArrays(gl::TRIANGLES, 0, 3);
-
-            let indices: [u8; 6] = [0, 1, 5, 2, 3, 5];
-            let mut ibo = 0;
-            gl::GenBuffers(1, &mut ibo);
-            gl::BindBuffer(gl::ELEMENT_ARRAY_BUFFER, ibo);
-            gl::BufferData(
-                gl::ELEMENT_ARRAY_BUFFER,
-                (indices.len() * mem::size_of::<u8>()) as GLsizeiptr,
-                mem::transmute(&indices[0]),
-                gl::STATIC_DRAW,
-            );
-
-            gl::DrawElements(gl::TRIANGLES, 6, gl::UNSIGNED_BYTE, ptr::null());
-        }
+        // TODO: more buffers
+        let mut vbo = 0;
+        gl::GenBuffers(1, &mut vbo);
+        gl::BindBuffer(gl::ARRAY_BUFFER, vbo);
     }
 }
 
@@ -249,8 +390,3 @@ unsafe fn shader(shader_type: u32, source: &str) -> u32 {
 
     shader
 }
-
-// TODO: nejakou fci render(), ktera teda vykresli vsechno, co chci
-// pripravit (vstupni) data pro render zhruba tak, jak opravdu budou vypadat
-// pripravit to mutacni api opet zhruba tak, jak bude vypadat (a klidne to poupravit aby to nejvic sedelo tomu renderu, protoze ten bude spolu s layoutem
-// zrat nejvic vykonu
