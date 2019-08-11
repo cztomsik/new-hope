@@ -98,6 +98,8 @@ fn main() {
 const WIDTH: u32 = 300;
 
 struct GlRenderer {
+    vbo: u32,
+
     // simple pen to make it a bit more readable
     x: f32, y: f32,
 
@@ -106,9 +108,9 @@ struct GlRenderer {
 
 impl GlRenderer {
     fn new() -> Self {
-        init();
+        let vbo = init();
 
-        Self { x: 0., y: 0., data: Vec::new() }
+        Self { vbo, x: 0., y: 0., data: Vec::new() }
     }
 
     fn render(&mut self) {
@@ -119,13 +121,16 @@ impl GlRenderer {
             self.x = 0.;
             self.y = 0.;
 
+            self.data.clear();
+
             self.demo();
 
+            gl::BindBuffer(gl::ARRAY_BUFFER, self.vbo);
             gl::BufferData(
                 gl::ARRAY_BUFFER,
                 (self.data.len() * mem::size_of::<GLfloat>()) as GLsizeiptr,
                 mem::transmute(&self.data[0]),
-                gl::STATIC_DRAW,
+                gl::DYNAMIC_DRAW,
             );
 
             gl::EnableVertexAttribArray(0);
@@ -146,7 +151,14 @@ impl GlRenderer {
                 (mem::size_of::<f32>() * 5) as GLint,
                 (mem::size_of::<f32>() * 2) as *const GLvoid,
             );
-            gl::DrawArrays(gl::TRIANGLES, 0, self.data.len() as i32);
+            gl::DrawArrays(gl::TRIANGLES, 0, (self.data.len() / 5) as i32);
+            gl::DisableVertexAttribArray(0);
+            gl::DisableVertexAttribArray(1);
+
+            let err = gl::GetError();
+            if err != gl::NO_ERROR {
+                panic!("gl err {}", err);
+            }
         }
     }
 
@@ -316,7 +328,7 @@ const BUTTON_PADDING: f32 = 5.;
 
 type Color = (f32, f32, f32);
 
-fn init() {
+fn init() -> u32 {
     unsafe {
         // not used but webgl & opengl core profile requires it
         let mut vao = 0;
@@ -330,6 +342,8 @@ fn init() {
         let mut vbo = 0;
         gl::GenBuffers(1, &mut vbo);
         gl::BindBuffer(gl::ARRAY_BUFFER, vbo);
+
+        vbo
     }
 }
 
