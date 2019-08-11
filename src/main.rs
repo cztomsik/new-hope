@@ -61,6 +61,7 @@ fn main() {
     let gl_context = window.gl_create_context().expect("create context");
 
     gl::load_with(|name| video.gl_get_proc_address(name) as *const _);
+    video.gl_set_swap_interval(sdl2::video::SwapInterval::Immediate).expect("vsync");
     window.gl_make_current(&gl_context).expect("set context");
 
     let mut renderer = GlRenderer::new();
@@ -91,7 +92,7 @@ fn main() {
         frames += 1;
 
         // limit to 100 fps
-        ::std::thread::sleep(::std::time::Duration::new(0, 1_000_000_000u32 / 100));
+        //::std::thread::sleep(::std::time::Duration::new(0, 1_000_000_000u32 / 100));
     }
 }
 
