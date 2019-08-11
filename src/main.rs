@@ -1,35 +1,3 @@
-// basic PoC just to get some idea about perf of my iGPU & Raspis
-// it is intentionally dumb & many things are missing:
-// - separate opaque & alpha passes
-// - Z-sorting
-// - culling
-// - clipping
-// - basically it's just a classic painter algo for now
-//
-// there's also no scene, it's a kind of imgui but even without any
-// event handling (nor hit-testing), no layout, no anything
-//
-// things missing but in a scope of this PoC:
-// - text rendering & caching (now it's just a line)
-// - images (no loading/decoding, just generate some checkboard)
-// - round border
-// - blur shadow (now it's just an outline)
-// - fill round rect (with different corner radiis)
-//
-// the idea is to get something working on osx, raspi & in a browser
-// improve it a bit and then port it back to the original project
-// as a replacement for webrender
-//
-// # Build
-// osx & raspi:
-//   cargo run
-//
-// emscripten (TODO):
-//   brew install emscripten
-//   cargo rustc --target=wasm32-unknown-emscripten -- -Clink-arg='-s' -Clink-arg='USE_SDL=2'
-//   http-server
-//   open http://127.0.0.1:8080/test.html
-
 use std::ffi::CString;
 use std::time::Instant;
 
@@ -59,10 +27,11 @@ fn main() {
     }
 
     let gl_context = window.gl_create_context().expect("create context");
-
     gl::load_with(|name| video.gl_get_proc_address(name) as *const _);
-    video.gl_set_swap_interval(sdl2::video::SwapInterval::Immediate).expect("vsync");
     window.gl_make_current(&gl_context).expect("set context");
+
+    // raspi never waits for vsync but turning it off throws
+    let _ = video.gl_set_swap_interval(sdl2::video::SwapInterval::Immediate);
 
     let mut renderer = GlRenderer::new();
 
