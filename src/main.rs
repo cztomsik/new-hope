@@ -39,16 +39,15 @@ fn main() {
     let mut frames: u128 = 0;
 
     loop {
-        renderer.render();
-
-        window.gl_swap_window();
-
         for e in event_pump.poll_iter() {
             match e {
                 sdl2::event::Event::Quit { .. } => panic!("TODO: quit"),
                 _ => {}
             }
         }
+
+        renderer.render();
+        window.gl_swap_window();
 
         let elapsed = time.elapsed().as_nanos() as f32 / 1_000_000_000 as f32;
 
@@ -100,7 +99,7 @@ impl GlRenderer {
                 gl::ARRAY_BUFFER,
                 (self.data.len() * mem::size_of::<GLfloat>()) as GLsizeiptr,
                 mem::transmute(&self.data[0]),
-                gl::DYNAMIC_DRAW,
+                gl::STATIC_DRAW,
             );
 
             gl::EnableVertexAttribArray(0);
@@ -175,14 +174,13 @@ impl GlRenderer {
     }
 
     fn button(&mut self, text: &str) {
-        let w = text.len() as f32 * 15.;
-        let h = 32.;
+        let w = 3. * BUTTON_PADDING + text.len() as f32 * 10.;
 
-        self.fill_round(self.x, self.y, w, h, 4., BUTTON_COLOR);
-        self.x += 2. * BUTTON_PADDING;
+        self.fill_round(self.x, self.y, w, BUTTON_HEIGHT, 4., BUTTON_COLOR);
+        self.x += 1.5 * BUTTON_PADDING;
         self.y += BUTTON_PADDING;
         self.text(text, BUTTON_TEXT_COLOR);
-        self.x += 50.;
+        self.x += 4. * BUTTON_PADDING;
     }
 
     fn link(&mut self, text: &str) {
@@ -195,12 +193,11 @@ impl GlRenderer {
     }
 
     fn text(&mut self, text: &str, color: Color) {
-        let w = text.len() as f32 * 10.;
-
-        // line for now
-        self.fill_rect(self.x, self.y + 13., w, 1., color);
-
-        self.x += w;
+        // quads for now
+        for _ in 0..text.len() {
+            self.fill_rect(self.x, self.y, 8., 16., color);
+            self.x += 10.;
+        }
     }
 
     fn shadow(&mut self, x: f32, y: f32, w: f32, h: f32, _blur: f32, spread: f32, color: Color) {
@@ -292,9 +289,10 @@ const NAVBAR_COLOR: Color = (0.3, 0.3, 1.);
 const NAVBAR_TEXT_COLOR: Color = (1., 1., 1.);
 const LINK_COLOR: Color = (0., 0., 1.);
 
+const BUTTON_HEIGHT: f32 = 32.;
 const BUTTON_COLOR: Color = (0.3, 0.3, 1.);
 const BUTTON_TEXT_COLOR: Color = (1., 1., 1.);
-const BUTTON_PADDING: f32 = 5.;
+const BUTTON_PADDING: f32 = 8.;
 
 type Color = (f32, f32, f32);
 
