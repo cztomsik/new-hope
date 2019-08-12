@@ -15,7 +15,7 @@ fn main() {
     let mut event_pump = sdl.event_pump().expect("init event pump");
 
     let window = video
-        .window("300", WIDTH, 400)
+        .window("Test", WIDTH, 900)
         .opengl()
         .resizable()
         .build()
@@ -52,6 +52,7 @@ fn main() {
         let elapsed = time.elapsed().as_nanos() as f32 / 1_000_000_000 as f32;
 
         if elapsed > 1. {
+            // BTW: hiding terminal & other wnds can do wonders
             println!("avg fps {}", frames as f32 / elapsed);
             frames = 0;
             time = Instant::now();
@@ -64,7 +65,7 @@ fn main() {
     }
 }
 
-const WIDTH: u32 = 300;
+const WIDTH: u32 = 1200;
 
 struct GlRenderer {
     vbo: u32,
@@ -90,7 +91,8 @@ impl GlRenderer {
             self.x = 0.;
             self.y = 0.;
 
-            self.data.clear();
+            // much faster than clear()
+            self.data.set_len(0);
 
             self.demo();
 
@@ -142,6 +144,14 @@ impl GlRenderer {
 
         self.button("Create");
         self.link("Cancel");
+
+        self.y = 20.;
+
+        for _ in 0..50 {
+            self.x = 240.;
+            self.text("Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt...", TEXT_COLOR);
+            self.y += 20.;
+        }
     }
 
     fn navbar(&mut self, brand_text: &str) {
@@ -256,7 +266,7 @@ const VERTEX_SHADER_SOURCE: &str = r#"
 
   void main() {
     // TODO: uniforms
-    vec2 size = vec2(300., 400.);
+    vec2 size = vec2(1200., 900.);
     vec2 xy = (a_pos / (size / 2.)) - 1.;
     xy.y *= -1.;
 
