@@ -69,6 +69,7 @@ const WIDTH: u32 = 1200;
 
 struct GlRenderer {
     vbo: u32,
+    tex: u32,
 
     // simple pen to make it a bit more readable
     x: f32, y: f32,
@@ -78,9 +79,9 @@ struct GlRenderer {
 
 impl GlRenderer {
     fn new() -> Self {
-        let vbo = init();
+        let (vbo, tex) = init();
 
-        Self { vbo, x: 0., y: 0., data: Vec::new() }
+        Self { vbo, tex, x: 0., y: 0., data: Vec::new() }
     }
 
     fn render(&mut self) {
@@ -92,6 +93,7 @@ impl GlRenderer {
             self.y = 0.;
 
             // much faster than clear()
+            // but unsafe because vec could contain Rc, etc.
             self.data.set_len(0);
 
             self.demo();
@@ -122,7 +124,11 @@ impl GlRenderer {
                 (mem::size_of::<f32>() * 5) as GLint,
                 (mem::size_of::<f32>() * 2) as *const GLvoid,
             );
+            gl::ActiveTexture(gl::TEXTURE0);
+            gl::BindTexture(gl::TEXTURE_2D, self.tex);
+
             gl::DrawArrays(gl::TRIANGLES, 0, (self.data.len() / 5) as i32);
+
             gl::DisableVertexAttribArray(0);
             gl::DisableVertexAttribArray(1);
 
@@ -281,9 +287,17 @@ const FRAGMENT_SHADER_SOURCE: &str = r#"
   precision mediump float;
 
   varying vec3 v_color;
+  uniform sampler2D u_texture;
 
   void main() {
-    gl_FragColor = vec4(v_color, 1.);
+    // TODO: uniform
+    vec2 size = vec2(1200., 900.);
+    vec2 pos = vec2(0.5, 0.5) + gl_FragCoord.xy / size;
+
+    float distance = texture2D(u_texture, pos).r;
+    float alpha = smoothstep(0.5, 0.6, distance);
+
+    gl_FragColor = vec4(alpha, alpha, alpha, alpha);
   }
 "#;
 
@@ -306,7 +320,9 @@ const BUTTON_PADDING: f32 = 8.;
 
 type Color = (f32, f32, f32);
 
-fn init() -> u32 {
+const LETTER_SDF: &[u8; 64 * 64 * 3] = include_bytes!("../letter.bin");
+
+fn init() -> (u32, u32) {
     unsafe {
         // not used but webgl & opengl core profile requires it
         let mut vao = 0;
@@ -321,7 +337,28 @@ fn init() -> u32 {
         gl::GenBuffers(1, &mut vbo);
         gl::BindBuffer(gl::ARRAY_BUFFER, vbo);
 
-        vbo
+        let mut tex = 0;
+        gl::GenTextures(1, &mut tex);
+        gl::BindTexture(gl::TEXTURE_2D, tex);
+        gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR as i32);
+        gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::LINEAR as i32); 
+        gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::REPEAT as i32);
+        gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, gl::REPEAT as i32);
+
+        // because of RGB
+        gl::PixelStorei(gl::UNPACK_ALIGNMENT, 1);
+        gl::TexImage2D(gl::TEXTURE_2D, 0, gl::RGB as i32, 64, 64, 0, gl::RGB, gl::UNSIGNED_BYTE, mem::transmute(LETTER_SDF));
+
+        let err = gl::GetError();
+        if err != gl::NO_ERROR {
+            panic!("gl err {}", err);
+        }        
+
+        for i in 0..LETTER_SDF.len() {
+            println!("{:?}", &LETTER_SDF[i]);
+        }
+
+        (vbo, tex)
     }
 }
 
