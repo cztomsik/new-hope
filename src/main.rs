@@ -9,6 +9,95 @@ use gl::types::*;
 use sdl2;
 use sdl2::video::GLProfile;
 
+/// Application unit (or something similar, unit of measure)
+/// TODO(later): Integer type could save some CPU & memory
+type Au = f32;
+
+/// Everything is quad-based, because it's way easier to imagine then
+struct Quad<T>([Vertex<T>; 4]);
+
+/// Vertex including some primitive-specific attributes
+struct Vertex<T>(Au, Au, T);
+
+// for indexed drawing
+// raspi can do only 65k vertices in one batch
+// could be configurable but it's probably better to play it safe
+//type VertexIndex = u16;
+
+/// Colors are RGBA, we could save 4x8 bits for each opaque quad but
+/// it's probably not worth the additional complexity and we can share
+/// buffer for opaque/alpha quads then (faster opacity animation)
+#[derive(Clone, Copy)]
+struct RGBA(u8, u8, u8, u8);
+
+struct Buffer<T> {
+    vbo: VboId,
+    data: Vec<T>
+}
+
+impl <T> Buffer<T> {
+    fn new() -> Self {
+        let mut vbo = 0;
+
+        unsafe { gl::GenBuffers(1, &mut vbo) }
+
+        Self {
+            vbo,
+            data: Vec::new()
+        }
+    }
+}
+
+impl <T: Copy> Buffer<Quad<T>> {
+    // TODO: a, b points
+    fn add_quad(&mut self, (x, y, w, h): (Au, Au, Au, Au), data: T) {
+        let quad = Quad([
+            Vertex(x, y, data),
+            Vertex(x + w, y, data),
+            Vertex(x + w, y + h, data),
+            Vertex(x, y + h, data)
+        ]);
+
+        self.data.push(quad);
+    }
+}
+
+type VboId = u32;
+
+struct NotSureWhat {
+    some_buf: Buffer<Quad<RGBA>>
+}
+
+impl NotSureWhat {
+    fn new() -> Self {
+        let mut res = Self {
+            some_buf: Buffer::new()
+        };
+
+        res.some_buf.add_quad((0., 0., 0.5, 0.5), RGBA(0, 0, 0, 255));
+
+        res
+    }
+
+    // TODO: skip up-to-date buffers
+    unsafe fn upload_buffers(&self) {
+      let some_size = mem::size_of::<Vertex<RGBA>>();
+
+      for b in [&self.some_buf].iter() {
+          gl::BindBuffer(gl::ARRAY_BUFFER, b.vbo);
+          gl::BufferData(
+            gl::ARRAY_BUFFER,
+            (4 * b.data.len() * some_size) as isize,
+            mem::transmute(&b.data[0]),
+            gl::STATIC_DRAW
+          );
+          check();
+      }
+    }
+
+}
+
+
 fn main() {
     let sdl = sdl2::init().expect("init SDL2");
     let video = sdl.video().expect("init video");
@@ -52,15 +141,15 @@ fn main() {
         let elapsed = time.elapsed().as_nanos() as f32 / 1_000_000_000 as f32;
 
         if elapsed > 1. {
-            // BTW: hiding terminal & other wnds can do wonders
-            println!("avg fps {}", frames as f32 / elapsed);
+            // BTW: make sure to hide terminal & other windows, sometimes it can do wonders with FPS
+            println!("avg FPS {}", frames as f32 / elapsed);
             frames = 0;
             time = Instant::now();
         }
 
         frames += 1;
 
-        // limit to 100 fps
+        // limit to 100 FPS
         //::std::thread::sleep(::std::time::Duration::new(0, 1_000_000_000u32 / 100));
     }
 }
@@ -68,20 +157,15 @@ fn main() {
 const WIDTH: u32 = 1200;
 
 struct GlRenderer {
-    vbo: u32,
-    tex: u32,
-
-    // simple pen to make it a bit more readable
-    x: f32, y: f32,
-
-    data: Vec<f32>
+    foo: NotSureWhat
 }
 
 impl GlRenderer {
     fn new() -> Self {
-        let (vbo, tex) = init();
+        init();
+        let foo = NotSureWhat::new();
 
-        Self { vbo, tex, x: 0., y: 0., data: Vec::new() }
+        Self { foo }
     }
 
     fn render(&mut self) {
@@ -89,22 +173,7 @@ impl GlRenderer {
             gl::ClearColor(1.0, 1.0, 1.0, 1.0);
             gl::Clear(gl::COLOR_BUFFER_BIT);
 
-            self.x = 0.;
-            self.y = 0.;
-
-            // much faster than clear()
-            // but unsafe because vec could contain Rc, etc.
-            self.data.set_len(0);
-
-            self.demo();
-
-            gl::BindBuffer(gl::ARRAY_BUFFER, self.vbo);
-            gl::BufferData(
-                gl::ARRAY_BUFFER,
-                (self.data.len() * mem::size_of::<GLfloat>()) as GLsizeiptr,
-                mem::transmute(&self.data[0]),
-                gl::STATIC_DRAW,
-            );
+            self.foo.upload_buffers();
 
             gl::EnableVertexAttribArray(0);
             gl::VertexAttribPointer(
@@ -112,152 +181,14 @@ impl GlRenderer {
                 2,
                 gl::FLOAT,
                 gl::FALSE,
-                (mem::size_of::<f32>() * 5) as GLint,
+                (mem::size_of::<Vertex<RGBA>>()) as GLint,
                 0 as *const GLvoid,
             );
-            gl::EnableVertexAttribArray(1);
-            gl::VertexAttribPointer(
-                1,
-                3,
-                gl::FLOAT,
-                gl::FALSE,
-                (mem::size_of::<f32>() * 5) as GLint,
-                (mem::size_of::<f32>() * 2) as *const GLvoid,
-            );
-            gl::ActiveTexture(gl::TEXTURE0);
-            gl::BindTexture(gl::TEXTURE_2D, self.tex);
 
-            gl::DrawArrays(gl::TRIANGLES, 0, (self.data.len() / 5) as i32);
+            println!("{}", mem::size_of::<Vertex<RGBA>>());
+            gl::DrawArrays(gl::TRIANGLES, 0, 3 * self.foo.some_buf.data.len() as i32);
 
-            gl::DisableVertexAttribArray(0);
-            gl::DisableVertexAttribArray(1);
-
-            let err = gl::GetError();
-            if err != gl::NO_ERROR {
-                panic!("gl err {}", err);
-            }
-        }
-    }
-
-    fn demo(&mut self) {
-        self.navbar("Demo");
-        self.h1("Create contact");
-
-        self.focus();
-        self.field("Name");
-        self.field("E-mail");
-        self.field("Phone");
-
-        self.button("Create");
-        self.link("Cancel");
-
-        self.y = 20.;
-
-        for _ in 0..50 {
-            self.x = 240.;
-            self.text("Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt...", TEXT_COLOR);
-            self.y += 20.;
-        }
-    }
-
-    fn navbar(&mut self, brand_text: &str) {
-        self.fill_rect(0.0, 0.0, WIDTH as f32, 48.0, NAVBAR_COLOR);
-        self.br();
-        self.text(brand_text, NAVBAR_TEXT_COLOR);
-        self.br();
-        self.br();
-        self.br();
-    }
-
-    fn h1(&mut self, text: &str) {
-        self.text(text, TEXT_COLOR);
-        self.br();
-        self.br();
-    }
-
-    // where it is just do a round rect and don't change x/y (expects field)
-    fn focus(&mut self) {
-        self.shadow(self.x, self.y + 20., INPUT_WIDTH, INPUT_HEIGHT, 0.0, 1.0, FOCUS_COLOR);
-    }
-
-    fn field(&mut self, label: &str) {
-        self.text(label, TEXT_COLOR);
-        self.br();
-        self.fill_rect(self.x, self.y, INPUT_WIDTH, INPUT_HEIGHT, INPUT_COLOR);
-        self.border(self.x, self.y, INPUT_WIDTH, INPUT_HEIGHT, INPUT_BORDER_COLOR);
-        self.y += INPUT_HEIGHT;
-        self.br();
-    }
-
-    fn button(&mut self, text: &str) {
-        let w = 3. * BUTTON_PADDING + text.len() as f32 * 10.;
-
-        self.fill_round(self.x, self.y, w, BUTTON_HEIGHT, 4., BUTTON_COLOR);
-        self.x += 1.5 * BUTTON_PADDING;
-        self.y += BUTTON_PADDING;
-        self.text(text, BUTTON_TEXT_COLOR);
-        self.x += 4. * BUTTON_PADDING;
-    }
-
-    fn link(&mut self, text: &str) {
-        self.text(text, LINK_COLOR);
-    }
-
-    fn br(&mut self) {
-        self.x = 30.;
-        self.y += 20.;
-    }
-
-    fn text(&mut self, text: &str, color: Color) {
-        // quads for now
-        for _ in 0..text.len() {
-            self.fill_rect(self.x, self.y, 8., 16., color);
-            self.x += 10.;
-        }
-    }
-
-    fn shadow(&mut self, x: f32, y: f32, w: f32, h: f32, _blur: f32, spread: f32, color: Color) {
-        // solid for now
-        self.fill_rect(x - spread, y - spread, w + 2. * spread, h + 2. * spread, color);
-    }
-
-    fn border(&mut self, x: f32, y: f32, w: f32, h: f32, color: Color) {
-        self.fill_rect(x, y, w, 1., color);
-        self.fill_rect(x, y, 1., h, color);
-        self.fill_rect(x, y + h - 1., w, 1., color);
-        self.fill_rect(x + w - 1., y, 1., h, color);
-    }
-
-    fn fill_round(&mut self, x: f32, y: f32, w: f32, h: f32, _radius: f32, color: Color) {
-        //println!("fill round {:?}", (x, y, w, h, radius, color));
-        self.fill_rect(x, y, w, h, color);
-    }
-
-    fn fill_rect(&mut self, x: f32, y: f32, w: f32, h: f32, (r, g, b): Color) {
-        //println!("fill rect {:?}", (x, y, w, h, color));
-
-        self.fill_triangle([
-            (x, y, r, g, b),
-            (x + w, y, r, g, b),
-            (x + w, y + h, r, g, b)
-        ]);
-
-        self.fill_triangle([
-            (x, y, r, g, b),
-            (x + w, y + h, r, g, b),
-            (x, y + h, r, g, b)
-        ]);
-    }
-
-    fn fill_triangle(&mut self, data: [(f32, f32, f32, f32, f32); 3]) {
-        //println!("fill triangle {:?}", &data);
-
-        for (x, y, r, g, b) in data.iter() {
-            self.data.push(*x);
-            self.data.push(*y);
-            self.data.push(*r);
-            self.data.push(*g);
-            self.data.push(*b);
+            check()
         }
     }
 }
@@ -266,18 +197,9 @@ const VERTEX_SHADER_SOURCE: &str = r#"
   #version 100
 
   attribute vec2 a_pos;
-  attribute vec3 a_color;
-
-  varying vec3 v_color;
 
   void main() {
-    // TODO: uniforms
-    vec2 size = vec2(1200., 900.);
-    vec2 xy = (a_pos / (size / 2.)) - 1.;
-    xy.y *= -1.;
-
-    gl_Position = vec4(xy, 0.0, 1.0);
-    v_color = a_color;
+    gl_Position = vec4(a_pos, 0.0, 1.0);
   }
 "#;
 
@@ -286,43 +208,12 @@ const FRAGMENT_SHADER_SOURCE: &str = r#"
 
   precision mediump float;
 
-  varying vec3 v_color;
-  uniform sampler2D u_texture;
-
   void main() {
-    // TODO: uniform
-    vec2 size = vec2(1200., 900.);
-    vec2 pos = vec2(0.5, 0.5) + gl_FragCoord.xy / size;
-
-    float distance = texture2D(u_texture, pos).r;
-    float alpha = smoothstep(0.5, 0.6, distance);
-
-    gl_FragColor = vec4(alpha, alpha, alpha, alpha);
+    gl_FragColor = vec4(0., 0., 0., 1.);
   }
 "#;
 
-const INPUT_WIDTH: f32 = 180.;
-const INPUT_HEIGHT: f32 = 28.;
-const INPUT_COLOR: Color = (1., 1., 1.);
-const _INPUT_TEXT_COLOR: Color = (0.3, 0.3, 0.3);
-const INPUT_BORDER_COLOR: Color = (0.8, 0.8, 0.8);
-const FOCUS_COLOR: Color = (0.7, 0.7, 1.0);
-
-const TEXT_COLOR: Color = (0., 0., 0.);
-const NAVBAR_COLOR: Color = (0.3, 0.3, 1.);
-const NAVBAR_TEXT_COLOR: Color = (1., 1., 1.);
-const LINK_COLOR: Color = (0., 0., 1.);
-
-const BUTTON_HEIGHT: f32 = 32.;
-const BUTTON_COLOR: Color = (0.3, 0.3, 1.);
-const BUTTON_TEXT_COLOR: Color = (1., 1., 1.);
-const BUTTON_PADDING: f32 = 8.;
-
-type Color = (f32, f32, f32);
-
-const LETTER_SDF: &[u8; 64 * 64 * 3] = include_bytes!("../letter.bin");
-
-fn init() -> (u32, u32) {
+fn init() {
     unsafe {
         // not used but webgl & opengl core profile requires it
         let mut vao = 0;
@@ -332,33 +223,14 @@ fn init() -> (u32, u32) {
         let shader_program = shader_program(VERTEX_SHADER_SOURCE, FRAGMENT_SHADER_SOURCE);
         gl::UseProgram(shader_program);
 
-        // TODO: more buffers
-        let mut vbo = 0;
-        gl::GenBuffers(1, &mut vbo);
-        gl::BindBuffer(gl::ARRAY_BUFFER, vbo);
+        check();
+    }
+}
 
-        let mut tex = 0;
-        gl::GenTextures(1, &mut tex);
-        gl::BindTexture(gl::TEXTURE_2D, tex);
-        gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR as i32);
-        gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::LINEAR as i32); 
-        gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::REPEAT as i32);
-        gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, gl::REPEAT as i32);
-
-        // because of RGB
-        gl::PixelStorei(gl::UNPACK_ALIGNMENT, 1);
-        gl::TexImage2D(gl::TEXTURE_2D, 0, gl::RGB as i32, 64, 64, 0, gl::RGB, gl::UNSIGNED_BYTE, mem::transmute(LETTER_SDF));
-
-        let err = gl::GetError();
-        if err != gl::NO_ERROR {
-            panic!("gl err {}", err);
-        }        
-
-        for i in 0..LETTER_SDF.len() {
-            println!("{:?}", &LETTER_SDF[i]);
-        }
-
-        (vbo, tex)
+unsafe fn check() {
+    let err = gl::GetError();
+    if err != gl::NO_ERROR {
+        panic!("gl err {}", err);
     }
 }
 
