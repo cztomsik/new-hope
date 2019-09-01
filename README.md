@@ -10,7 +10,7 @@ there's also no scene, it's a kind of imgui but even without any
 event handling (nor hit-testing), no layout, no anything
 
 things missing but in a scope of this PoC:
-- text rendering & caching (now it's just a line)
+- text rendering & atlasing
 - images (no loading/decoding, just generate some checkboard)
 - round border
 - blur shadow (now it's just an outline)
@@ -30,7 +30,7 @@ as a replacement for webrender
 
 ### osx & raspi:
 ```
-cargo run
+cargo run --example main
 ```
 
 ### emscripten (TODO):
