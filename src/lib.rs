@@ -217,6 +217,15 @@ impl NotSureWhat {
                             (mem::size_of::<Vertex<RGBA>>()) as GLint,
                             0 as *const GLvoid,
                         );
+                        gl::EnableVertexAttribArray(1);
+                        gl::VertexAttribPointer(
+                            1,
+                            4,
+                            gl::UNSIGNED_BYTE,
+                            gl::FALSE,
+                            (mem::size_of::<Vertex<RGBA>>()) as GLint,
+                            (mem::size_of::<Pos>()) as *const std::ffi::c_void,
+                        );
 
                         quads_count = *num_quads;
                     },
@@ -347,9 +356,13 @@ const RECT_VS: &str = r#"
   #version 100
 
   attribute vec2 a_pos;
+  attribute vec4 a_color;
+
+  varying vec4 v_color;
 
   void main() {
     gl_Position = vec4(a_pos, 0.0, 1.0);
+    v_color = a_color;
   }
 "#;
 
@@ -358,8 +371,10 @@ const RECT_FS: &str = r#"
 
   precision mediump float;
 
+  varying vec4 v_color;
+
   void main() {
-    gl_FragColor = vec4(0., 0., 0., 1.);
+    gl_FragColor = v_color / 256.;
   }
 "#;
 

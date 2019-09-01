@@ -16,8 +16,8 @@ impl Demo {
         let mut renderer = NotSureWhat::new();
 
         // demo
-        let rect1 = 0;renderer.create_rect(Pos(0., 0., ), Pos(1., 1.), RGBA(0, 0, 0, 255));
-        let rect2 = renderer.create_rect(Pos(-1., -1., ), Pos(0., 0.), RGBA(0, 0, 0, 255));
+        let rect1 = renderer.create_rect(Pos(0., 0., ), Pos(1., 1.), RGBA(0, 0, 0, 255));
+        let rect2 = renderer.create_rect(Pos(-1., -1., ), Pos(0., 0.), RGBA(255, 0, 0, 255));
 
         renderer.set_display_list(&[
             DisplayItem::Rect(rect1),
