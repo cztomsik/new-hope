@@ -8,7 +8,7 @@ struct Demo {
     time: f32,
     renderer: NotSureWhat,
 
-    primitives: (RectId, RectId)
+    primitives: (RectId, RectId, RectId)
 }
 
 impl Demo {
@@ -16,19 +16,21 @@ impl Demo {
         let mut renderer = NotSureWhat::new();
 
         // demo
-        let rect1 = renderer.create_rect(Pos(0., 0., ), Pos(1., 1.), RGBA(0, 0, 0, 255));
-        let rect2 = renderer.create_rect(Pos(-1., -1., ), Pos(0., 0.), RGBA(255, 0, 0, 255));
+        let rect1 = renderer.create_rect(Pos(0., 0.), Pos(1., 1.), RGBA(0, 0, 255, 255));
+        let rect2 = renderer.create_rect(Pos(-1., -1.), Pos(0., 0.), RGBA(255, 0, 0, 255));
+        let rect3 = renderer.create_rect(Pos(-0.5, -0.5), Pos(0.5, 0.5), RGBA(0, 0, 0, 64));
 
         renderer.set_display_list(&[
             DisplayItem::Rect(rect1),
-            DisplayItem::Rect(rect2)
+            DisplayItem::Rect(rect2),
+            DisplayItem::Rect(rect3)
         ]);
 
         Self {
             time: 0.,
             renderer,
 
-            primitives: (rect1, rect2)
+            primitives: (rect1, rect2, rect3)
         }
     }
 
@@ -80,7 +82,7 @@ fn main() {
             }
         }
 
-        demo.tick(0.01);
+        demo.tick(0.02);
         demo.render();
         window.gl_swap_window();
 
@@ -95,8 +97,8 @@ fn main() {
 
         frames += 1;
 
-        // limit to 100 FPS
-        //::std::thread::sleep(::std::time::Duration::new(0, 1_000_000_000u32 / 100));
+        // sleep a bit
+        // ::std::thread::sleep(::std::time::Duration::new(0, 1_000_000_000u32 / 100));
     }
 }
 

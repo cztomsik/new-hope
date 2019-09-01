@@ -57,6 +57,11 @@ impl NotSureWhat {
 
             check();
 
+            gl::Enable(gl::BLEND);
+            gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
+
+            check();
+
             Self {
                 rect_program: shader_program(RECT_VS, RECT_FS),
                 image_program: shader_program(IMAGE_VS, IMAGE_FS),
