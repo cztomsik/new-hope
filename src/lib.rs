@@ -59,6 +59,7 @@ impl NotSureWhat {
 
             gl::Enable(gl::BLEND);
             gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
+            gl::BlendEquation(gl::FUNC_ADD);
 
             check();
 
@@ -113,13 +114,19 @@ impl NotSureWhat {
         let mut buffer = Buffer::new();
         let mut x = 0.;
 
+        let glyph_width = 0.05;
+        let glyph_height = 0.1;
+        let advance = 0.01;
+
         // TODO & should be somewhere else
         for _ in 0..glyphs {
-            let glyph_uv = Pos(0., 0.);
+            // for now we are rendering just colored quads
+            buffer.add_quad(Pos(x, 0.), Pos(x + glyph_width, glyph_height), color);
 
-            buffer.add_quad(Pos(x, 0.), Pos(x + 9., 16.), glyph_uv);
+            //let glyph_uv = Pos(0., 0.);
+            //buffer.add_quad(Pos(x, 0.), Pos(x + 9., 16.), glyph_uv);
 
-            x += 10.;
+            x += glyph_width + advance;
         }
 
         self.texts.add(Text {
@@ -141,23 +148,17 @@ impl NotSureWhat {
 
     // TODO: skip up-to-date buffers
     unsafe fn upload_buffers(&self) {
-      let some_size = mem::size_of::<Vertex<RGBA>>();
+        self.rect_buffer.upload();
 
-      for b in [&self.rect_buffer].iter() {
-          gl::BindBuffer(gl::ARRAY_BUFFER, b.vbo);
-          gl::BufferData(
-            gl::ARRAY_BUFFER,
-            // 4 vertices per quad
-            (4 * b.data.data.len() * some_size) as isize,
-            mem::transmute(&b.data.data[0]),
-            gl::STATIC_DRAW
-          );
-          check();
-      }
+        for t in &self.texts.data {
+            t.buffer.upload();
+        }
     }
 
     // if there were changes in the rendering order
     pub fn set_display_list(&mut self, items: &[DisplayItem]) {
+        println!("list {:?}", &items);
+
         let mut batches = Vec::new();
         let mut indices = Vec::new();
 
@@ -177,13 +178,33 @@ impl NotSureWhat {
 
                     batches.push(Batch::Rects(1));
                 }
+                DisplayItem::Text(text_id) => {
+                    let text = &self.texts[*text_id];
+
+                    // TODO: this is static and should be generated with glyphs
+                    for n in 0..text.buffer.data.data.len() {
+                        let base = 4 * (n as VertexIndex);
+
+                        indices.push(base + 1);
+                        indices.push(base);
+                        indices.push(base + 3);
+
+                        indices.push(base);
+                        indices.push(base + 2);
+                        indices.push(base + 3);
+                    }
+
+                    batches.push(Batch::Text(*text_id));
+                }
                 _ => unimplemented!()
             }
         }
 
         unsafe {
-            gl::BindBuffer(gl::ELEMENT_ARRAY_BUFFER, self.index_buffer.vbo);
-            gl::BufferData(gl::ELEMENT_ARRAY_BUFFER, (indices.len() * mem::size_of::<VertexIndex>()) as GLsizeiptr, mem::transmute(&indices[0]), gl::STATIC_DRAW);            
+            if !indices.is_empty() {
+                gl::BindBuffer(gl::ELEMENT_ARRAY_BUFFER, self.index_buffer.vbo);
+                gl::BufferData(gl::ELEMENT_ARRAY_BUFFER, (indices.len() * mem::size_of::<VertexIndex>()) as GLsizeiptr, mem::transmute(&indices[0]), gl::STATIC_DRAW);
+            }
         }
 
         self.batches = batches;
@@ -208,6 +229,8 @@ impl NotSureWhat {
 
             for b in &self.batches {
                 let quads_count;
+
+                // println!("batch {:?}", &b);
 
                 match b {
                     Batch::Rects(num_quads) => {
@@ -240,10 +263,30 @@ impl NotSureWhat {
                     },
                     Batch::Text(text_id) => {
                         gl::UseProgram(self.text_program);
-                        // TODO: attrs (glyph coords)
+                        // TODO: glyph coords/glyph_index
                         // TODO: uniforms
 
                         let text = &self.texts[*text_id];
+
+                        gl::BindBuffer(gl::ARRAY_BUFFER, text.buffer.vbo);
+                        gl::EnableVertexAttribArray(0);
+                        gl::VertexAttribPointer(
+                            0,
+                            2,
+                            gl::FLOAT,
+                            gl::FALSE,
+                            (mem::size_of::<Vertex<RGBA>>()) as GLint,
+                            0 as *const GLvoid,
+                        );
+                        gl::EnableVertexAttribArray(1);
+                        gl::VertexAttribPointer(
+                            1,
+                            4,
+                            gl::UNSIGNED_BYTE,
+                            gl::FALSE,
+                            (mem::size_of::<Vertex<RGBA>>()) as GLint,
+                            (mem::size_of::<Pos>()) as *const std::ffi::c_void,
+                        );
 
                         quads_count = text.buffer.data.data.len();
                     }
@@ -276,7 +319,8 @@ struct Vertex<T>(Pos, T);
 struct Text {
     pos: Pos,
     color: RGBA,
-    buffer: Buffer<Quad<Pos>>
+    // TODO: should be Pos (uv for glyph coords)
+    buffer: Buffer<Quad<RGBA>>
 }
 
 // Handles to primitives
@@ -290,6 +334,7 @@ pub type TextId = usize;
 type VertexIndex = u16;
 
 // one item of what is requested to be drawn
+#[derive(Debug)]
 pub enum DisplayItem {
     Rect(RectId),
     Image(ImageId),
@@ -298,6 +343,7 @@ pub enum DisplayItem {
 
 // what is going to be drawn, how many quads so that we know where to start with indices
 // + any other params necessary to setup the pipeline (can be indirect)
+#[derive(Debug)]
 enum Batch {
     Rects(usize),
 
@@ -329,6 +375,29 @@ impl <T> Buffer<T> {
     fn remove(&mut self, id: usize) {
         self.data.remove(id);
     }
+
+    fn upload(&self) {
+      if self.data.data.is_empty() {
+          return;
+      }
+
+      let item_size = mem::size_of::<T>();
+
+      // println!("upload {} x {}b", self.data.data.len(), item_size);
+
+      unsafe {
+          gl::BindBuffer(gl::ARRAY_BUFFER, self.vbo);
+          gl::BufferData(
+            gl::ARRAY_BUFFER,
+            // 4 vertices per quad
+            (4 * self.data.data.len() * item_size) as isize,
+            mem::transmute(&self.data.data[0]),
+            gl::STATIC_DRAW
+          );
+
+          check();
+      }
+  }
 }
 
 impl <T: Copy> Buffer<Quad<T>> {
@@ -389,10 +458,33 @@ const IMAGE_VS: &str = RECT_VS;
 const IMAGE_FS: &str = RECT_FS;
 
 // TODO:
-// - glyphs are translated by uniform
-// - sample from texture
-const TEXT_VS: &str = RECT_VS;
-const TEXT_FS: &str = RECT_FS;
+// - translate glyphs by uniform
+// - sample from texture (uv attr or glyph_index)
+const TEXT_VS: &str = r#"
+  #version 100
+
+  attribute vec2 a_pos;
+  attribute vec4 a_color;
+
+  varying vec4 v_color;
+
+  void main() {
+    gl_Position = vec4(a_pos, 0.0, 1.0);
+    v_color = a_color;
+  }
+"#;
+
+const TEXT_FS: &str = r#"
+  #version 100
+
+  precision mediump float;
+
+  varying vec4 v_color;
+
+  void main() {
+    gl_FragColor = v_color / 256.;
+  }
+"#;
 
 unsafe fn check() {
     let err = gl::GetError();

@@ -8,7 +8,7 @@ struct Demo {
     time: f32,
     renderer: NotSureWhat,
 
-    primitives: (RectId, RectId, RectId)
+    managed: (RectId, RectId)
 }
 
 impl Demo {
@@ -19,25 +19,28 @@ impl Demo {
         let rect1 = renderer.create_rect(Pos(0., 0.), Pos(1., 1.), RGBA(0, 0, 255, 255));
         let rect2 = renderer.create_rect(Pos(-1., -1.), Pos(0., 0.), RGBA(255, 0, 0, 255));
         let rect3 = renderer.create_rect(Pos(-0.5, -0.5), Pos(0.5, 0.5), RGBA(0, 0, 0, 64));
+        let text = renderer.create_text(Pos(0., 0.), 10, RGBA(0, 0, 0, 120));
 
         renderer.set_display_list(&[
             DisplayItem::Rect(rect1),
             DisplayItem::Rect(rect2),
-            DisplayItem::Rect(rect3)
+            DisplayItem::Rect(rect3),
+            DisplayItem::Text(text),
         ]);
 
         Self {
             time: 0.,
             renderer,
 
-            primitives: (rect1, rect2, rect3)
+            managed: (rect1, rect2)
         }
     }
 
     fn tick(&mut self, delta: f32) {
         self.time += delta;
 
-        self.renderer.set_rect_bounds(self.primitives.0, Pos(0., self.time.sin()), Pos(0.5, 0.5));
+        self.renderer.set_rect_bounds(self.managed.0, Pos(0., self.time.sin()), Pos(0.5, 0.5));
+        self.renderer.set_rect_bounds(self.managed.1, Pos(self.time.sin(), 0.), Pos(self.time.cos(), 0.5));
     }
 
     fn render(&mut self) {
@@ -82,13 +85,13 @@ fn main() {
             }
         }
 
-        demo.tick(0.02);
+        demo.tick(0.002);
         demo.render();
         window.gl_swap_window();
 
         let elapsed = time.elapsed().as_nanos() as f32 / 1_000_000_000 as f32;
 
-        if elapsed > 1. {
+        if elapsed > 5. {
             // BTW: make sure to hide terminal & other windows, sometimes it can do wonders with FPS
             println!("avg FPS {}", frames as f32 / elapsed);
             frames = 0;
